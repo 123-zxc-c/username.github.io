@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#1A3A5C">
+<title>火线排查 · 60秒生存判断</title>
+<style>
+:root{
+  --red:#D8261A; --blue:#1A3A5C; --orange:#E87A2E; --cream:#F5F0E8;
+  --green:#3FB984; --yellow:#E8B02E;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;}
+@supports (height:100dvh){
+  body,#app{height:100dvh;}
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",Arial,sans-serif;
+  background:#0f1c2b;color:var(--cream);overscroll-behavior:none;
+}
+#app{
+  max-width:480px;margin:0 auto;height:100%;display:flex;flex-direction:column;
+  background:var(--blue);position:relative;overflow:hidden;
+}
+.page{flex:1;display:flex;flex-direction:column;padding:22px 20px 28px;overflow-y:auto;}
+.page.center{justify-content:center;align-items:center;text-align:center;}
+
+.btn{
+  border:0;border-radius:999px;padding:16px;font-size:17px;font-weight:700;font-family:inherit;
+  background:var(--red);color:#fff;width:100%;cursor:pointer;
+  box-shadow:0 8px 24px rgba(216,38,26,.35);transition:.15s;
+}
+.btn:active{transform:scale(.98);}
+.btn.ghost{background:transparent;color:var(--cream);border:1.5px solid rgba(245,240,232,.4);box-shadow:none;}
+.btn + .btn{margin-top:12px;}
+.muted{color:rgba(245,240,232,.62);font-size:14px;line-height:1.7;}
+.small{font-size:12px;}
+h1.big{font-size:44px;letter-spacing:6px;margin:18px 0 12px;font-weight:800;}
+h2{font-size:22px;margin:0 0 16px;font-weight:700;}
+.sub{font-size:15px;line-height:1.9;color:rgba(245,240,232,.8);margin:0 0 30px;}
+.privacy{font-size:11px;color:rgba(245,240,232,.4);margin:16px 0 0;}
+.fire{font-size:56px;margin:10px 0 26px;animation:flick 1.4s ease-in-out infinite;}
+@keyframes flick{0%,100%{transform:scale(1) rotate(-2deg);opacity:.95}50%{transform:scale(1.12) rotate(2deg);opacity:1}}
+.badge{
+  display:inline-block;font-size:12px;padding:7px 14px;border-radius:999px;
+  background:rgba(232,122,46,.18);color:var(--orange);border:1px solid rgba(232,122,46,.35);
+}
+.card{
+  background:rgba(245,240,232,.07);border:1px solid rgba(245,240,232,.14);
+  border-radius:14px;padding:14px 16px;margin-bottom:12px;display:flex;gap:12px;align-items:flex-start;
+}
+.card b{font-size:15px;}
+.card p{margin:4px 0 0;font-size:13px;line-height:1.6;color:rgba(245,240,232,.75);}
+.card .ico{font-size:22px;line-height:1;}
+
+.rules{list-style:none;padding:0;margin:0 0 24px;}
+.rules li{
+  display:flex;gap:12px;align-items:flex-start;font-size:15px;line-height:1.6;
+  padding:14px 0;border-bottom:1px solid rgba(245,240,232,.1);
+}
+.rules li b{
+  flex:0 0 26px;height:26px;border-radius:50%;background:var(--red);
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+}
+
+.hud{margin-bottom:14px;}
+.bar{height:6px;background:rgba(245,240,232,.15);border-radius:3px;overflow:hidden;}
+.bar i{display:block;height:100%;width:100%;border-radius:3px;transition:width .1s linear;
+  background:linear-gradient(90deg,var(--orange),var(--red));}
+.hud-row{display:flex;justify-content:space-between;font-size:13px;
+  color:rgba(245,240,232,.72);margin-top:8px;}
+
+.scene{
+  position:relative;width:100%;aspect-ratio:4/5;border-radius:18px;overflow:hidden;
+  box-shadow:0 12px 32px rgba(0,0,0,.4);margin-bottom:12px;
+}
+.scene::after{content:'';position:absolute;left:0;right:0;bottom:0;height:28%;
+  background:linear-gradient(180deg,transparent,rgba(0,0,0,.5));pointer-events:none;}
+.scene.kitchen{background:radial-gradient(circle at 50% 28%,#7a5433,#2e1f14 75%);}
+.scene.bedroom{background:radial-gradient(circle at 50% 28%,#33506f,#131f2e 75%);}
+.scene.corridor{background:radial-gradient(circle at 50% 28%,#52525c,#1e1e22 75%);}
+.obj{
+  position:absolute;transform:translate(-50%,-50%);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  width:72px;height:72px;border-radius:14px;padding:0;cursor:pointer;
+  background:rgba(245,240,232,.07);border:1px dashed rgba(245,240,232,.28);
+  color:var(--cream);font-family:inherit;transition:background .18s,border-color .18s;
+}
+.obj:active{background:rgba(216,38,26,.28);border-color:var(--red);}
+.obj .emoji{font-size:26px;line-height:1;}
+.obj .label{font-size:10px;margin-top:3px;opacity:.75;white-space:nowrap;}
+.obj.found{
+  background:rgba(63,185,132,.22);border:1px solid var(--green);opacity:.9;
+  pointer-events:none;
+}
+.obj.wrong{animation:shake .3s;}
+@keyframes shake{
+  0%,100%{transform:translate(-50%,-50%);}
+  25%{transform:translate(calc(-50% - 6px),-50%);}
+  75%{transform:translate(calc(-50% + 6px),-50%);}
+}
+.tip{text-align:center;font-size:12px;color:rgba(245,240,232,.5);margin:0;}
+
+.q{font-size:19px;line-height:1.6;margin:8px 0 22px;}
+.options{display:flex;flex-direction:column;}
+.opt{
+  width:100%;text-align:left;padding:18px 20px;margin-bottom:14px;border-radius:14px;
+  background:rgba(245,240,232,.07);border:1.5px solid rgba(245,240,232,.18);
+  color:var(--cream);font-size:16px;line-height:1.5;font-family:inherit;cursor:pointer;
+  transition:.15s;
+}
+.opt:active{background:rgba(216,38,26,.25);border-color:var(--red);transform:scale(.99);}
+
+.result-head{font-size:26px;font-weight:800;letter-spacing:2px;margin:12px 0 20px;}
+.result-head.ok{color:var(--green);}
+.result-head.bad{color:var(--red);}
+.consequence{
+  border-radius:16px;padding:20px;margin-bottom:20px;font-size:16px;line-height:1.8;
+  border-left:4px solid var(--red);background:rgba(216,38,26,.14);
+  animation:fadeUp .4s ease both;
+}
+.consequence.ok{border-left-color:var(--green);background:rgba(63,185,132,.12);}
+.consequence p{margin:0;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.btns{margin-top:auto;padding-top:16px;}
+
+.tags{display:flex;flex-direction:column;gap:10px;margin:6px 0 20px;}
+.tag{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:16px 18px;border-radius:14px;background:rgba(245,240,232,.07);
+  border:1px solid rgba(245,240,232,.12);font-size:15px;
+}
+.tag b{font-size:20px;letter-spacing:2px;}
+.lv-strong{color:var(--green);}
+.lv-mid{color:var(--yellow);}
+.lv-weak{color:var(--red);}
+.advice{
+  background:rgba(232,122,46,.12);border:1px solid rgba(232,122,46,.3);
+  border-radius:14px;padding:16px;font-size:14px;line-height:1.75;margin-bottom:18px;
+}
+.advice b{color:var(--orange);}
+
+.card-img{width:100%;border-radius:16px;display:block;box-shadow:0 12px 32px rgba(0,0,0,.45);margin-bottom:16px;}
+
+.toast{
+  position:fixed;left:50%;bottom:90px;transform:translate(-50%,20px);
+  background:rgba(15,28,43,.96);border:1px solid rgba(232,122,46,.5);
+  color:var(--cream);padding:12px 18px;border-radius:12px;font-size:14px;
+  opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:82vw;text-align:center;
+  line-height:1.5;
+}
+.toast.show{opacity:1;transform:translate(-50%,0);}
+
+#rotate{
+  display:none;position:fixed;inset:0;background:var(--blue);z-index:999;
+  align-items:center;justify-content:center;flex-direction:column;gap:16px;font-size:15px;
+}
+@media (orientation:landscape) and (max-height:520px){
+  #rotate{display:flex;}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="toast" id="toast"></div>
+<div id="rotate"><div style="font-size:44px">📱</div><div>请竖屏使用，体验更佳</div></div>
+
+<script>
+/* =========================================================================
+ * 消防主题 H5 —— 「火线排查 · 60秒生存判断」
+ * 最终版：全部修复 + 三项优化（ts 传参 / 重试按钮入容器 / 像素级截断）
+ * ========================================================================= */
+
+/* ----------------------------- 0. 埋点 ----------------------------- */
+function track(name, payload){
+  try {
+    const p = payload || {};
+    if (typeof window.__fireH5Track === 'function') {
+      window.__fireH5Track(name, { ...p, ts: Date.now() });
+    }
+  } catch (_) { /* 埋点失败不影响主流程 */ }
+}
+
+/* ----------------------------- 1. 常量 ----------------------------- */
+const HAZARD_TIME         = 20;
+const DECISION_TIME       = 30;
+const REVIVE_MAX          = 2;
+const PENALTY             = 2;
+const DECISION_MIN_NEXT   = 5;
+const DECISION_MIN_REVIVE = 3;
+
+/* ----------------------------- 2. 数据 ----------------------------- */
+const SCENES = [
+  {
+    id: 'kitchen', name: '厨房',
+    objects: [
+      { id:'k1', emoji:'🍳', name:'油锅',     isHazard:true,  cx:22, cy:30, hint:'油锅干烧，关火盖锅盖' },
+      { id:'k2', emoji:'🧻', name:'抹布',     isHazard:true,  cx:55, cy:22, hint:'抹布远离灶台明火' },
+      { id:'k3', emoji:'🔧', name:'燃气软管', isHazard:true,  cx:80, cy:42, hint:'软管老化及时更换' },
+      { id:'k4', emoji:'🧊', name:'冰箱',     isHazard:false, cx:20, cy:60 },
+      { id:'k5', emoji:'🫖', name:'水壶',     isHazard:false, cx:52, cy:55 },
+      { id:'k6', emoji:'🧯', name:'灭火器',   isHazard:false, cx:80, cy:75 }
+    ],
+    decisions: [
+      { id:'k_d1', dimension:'warning',
+        question:'油锅起火，你第一反应是？',
+        tip:'油锅起火先关火，用锅盖或湿抹布覆盖隔绝空气。绝不能泼水——热油遇水会瞬间爆燃。',
+        options:[
+          { id:'a', label:'泼水灭火',   correct:false, consequenceText:'热油遇水爆燃，火苗蹿上抽油烟机，厨房瞬间被点燃。' },
+          { id:'b', label:'关火盖锅盖', correct:true,  consequenceText:'隔绝空气，火很快熄灭。你有序撤离并关好厨房门。' }
+        ] },
+      { id:'k_d2', dimension:'route',
+        question:'火势扩大，你要下楼，走哪条路？',
+        tip:'火灾时电梯会断电停运并灌入浓烟，楼梯间才是生命通道。',
+        options:[
+          { id:'a', label:'乘电梯下楼',   correct:false, consequenceText:'电梯断电停在半层，轿厢门缝灌入浓烟，你被困在竖井里。' },
+          { id:'b', label:'走封闭楼梯间', correct:true,  consequenceText:'楼梯间无烟，你顺着疏散指示顺利撤到楼下空地。' }
+        ] }
+    ]
+  },
+  {
+    id: 'bedroom', name: '卧室',
+    objects: [
+      { id:'b1', emoji:'🔥', name:'小太阳',   isHazard:true,  cx:22, cy:62, hint:'取暖器上别搭衣物' },
+      { id:'b2', emoji:'🔌', name:'插线板',   isHazard:true,  cx:52, cy:72, hint:'插线板不串联过载' },
+      { id:'b3', emoji:'📱', name:'充电器',   isHazard:true,  cx:80, cy:48, hint:'充电器用完要拔掉' },
+      { id:'b4', emoji:'💡', name:'台灯',     isHazard:false, cx:22, cy:25 },
+      { id:'b5', emoji:'🛏️', name:'床',       isHazard:false, cx:55, cy:25 },
+      { id:'b6', emoji:'🪟', name:'窗帘',     isHazard:false, cx:82, cy:22 }
+    ],
+    decisions: [
+      { id:'b_d1', dimension:'warning',
+        question:'门外似乎有烟，开门前你会？',
+        tip:'开门前先用手背摸门把手、看门缝。门烫或有烟，说明门外已经是火场。',
+        options:[
+          { id:'a', label:'直接开门就往外冲', correct:false, consequenceText:'热浪和浓烟瞬间涌入，你被呛得睁不开眼，退回了房间。' },
+          { id:'b', label:'先摸门把手、看门缝', correct:true, consequenceText:'门把手不烫、门缝无烟——你确认门外安全，低姿撤离。' }
+        ] },
+      { id:'b_d2', dimension:'smoke',
+        question:'必须穿过一段烟雾，你怎么走？',
+        tip:'烟气高温有毒且向上聚集。贴地低姿、湿毛巾捂口鼻、沿墙摸行。',
+        options:[
+          { id:'a', label:'直立快跑冲过去', correct:false, consequenceText:'浓烟聚集在头顶，你吸入大量烟气，视线全失、方向感丧失。' },
+          { id:'b', label:'低姿捂口鼻沿墙走', correct:true, consequenceText:'贴近地面空气相对清洁，你摸着墙面找到了安全出口。' }
+        ] }
+    ]
+  },
+  {
+    id: 'corridor', name: '楼道',
+    objects: [
+      { id:'c1', emoji:'🛵', name:'电动车',   isHazard:true,  cx:22, cy:65, hint:'电动车不进楼不入户' },
+      { id:'c2', emoji:'📦', name:'纸箱杂物', isHazard:true,  cx:52, cy:75, hint:'楼道不堆物，生命通道畅' },
+      { id:'c3', emoji:'🚪', name:'防火门',   isHazard:true,  cx:80, cy:50, hint:'防火门常闭不上锁' },
+      { id:'c4', emoji:'🪜', name:'楼梯',     isHazard:false, cx:20, cy:25 },
+      { id:'c5', emoji:'🧯', name:'灭火器',   isHazard:false, cx:52, cy:30 },
+      { id:'c6', emoji:'🔦', name:'应急灯',   isHazard:false, cx:82, cy:20 }
+    ],
+    decisions: [
+      { id:'c_d1', dimension:'route',
+        question:'楼道浓烟滚滚，你在 3 楼，怎么办？',
+        tip:'楼道浓烟说明下方已着火。退回屋内关门堵缝、报警示警，比冲进浓烟安全得多。',
+        options:[
+          { id:'a', label:'冲进浓烟往下跑', correct:false, consequenceText:'烟气温度极高，你跑了几步就被逼退，呼吸严重受阻。' },
+          { id:'b', label:'退回屋内关门堵缝并报警', correct:true, consequenceText:'烟气被挡在门外，你在窗口示警，等待消防员抵达。' }
+        ] },
+      { id:'c_d2', dimension:'smoke',
+        question:'被困房间，为了防烟你应该？',
+        tip:'开门开窗会形成空气对流助燃。关门、湿毛巾堵缝、窗口示警才是正确动作。',
+        options:[
+          { id:'a', label:'打开所有门窗通风', correct:false, consequenceText:'新鲜空气涌入助燃，火势反而更猛，浓烟更快灌进房间。' },
+          { id:'b', label:'关门堵缝，窗口示警', correct:true, consequenceText:'烟气被挡在门外，消防员通过窗口信号快速定位到你。' }
+        ] }
+    ]
+  }
+];
+
+const FAIL_CARDS = {
+  0: { ico:'🛵', title:'楼道里的电动车',   text:'电动车入户充电、楼道停放，是近年来亡人火灾的头号元凶。' },
+  1: { ico:'🪟', title:'没有逃生口的防盗窗', text:'全封闭防盗窗让窗口变成死路，破拆需要时间，火不等人。' },
+  2: { ico:'📦', title:'被堵住的生命通道',   text:'楼道堆物看似无害，起火时它就是挡住你和消防员的那堵墙。' }
+};
+
+const ADVICE = {
+  warning: '开门前先摸门把手、看门缝——这一个动作，能帮你避开最致命的浓烟。',
+  route:   '起火时永远走楼梯间。电梯在火灾中就是一口竖井，断电、灌烟、停运。',
+  smoke:   '浓烟中贴地低姿、捂口鼻、沿墙走，这是穿过烟区唯一可靠的方式。'
+};
+
+/* ----------------------------- 3. 状态 ----------------------------- */
+const state = {
+  phase: 'intro',
+  sceneIndex: 0,
+  found: [],
+  hazardLeft: HAZARD_TIME,
+  decisionLeft: DECISION_TIME,
+  decisionIndex: 0,
+  reviveUsed: 0,
+  revivedSet: [],
+  answers: [],
+  stats: { warning:{c:0,t:0}, route:{c:0,t:0}, smoke:{c:0,t:0} },
+  failedScenes: [],
+  missed: [],
+  pendingDecision: null,
+  pendingOption: null,
+  scariest: null,
+  locked: false
+};
+
+const app = document.getElementById('app');
+
+/* ----------------------------- 4. 计时器 ----------------------------- */
+let timerId = null, timerEnd = 0, timerTick = null, timerDone = null;
+
+function stopTimer(){
+  if (timerId) { clearInterval(timerId); timerId = null; }
+  timerTick = null; timerDone = null;
+}
+function fireTimerEnd(){
+  const done = timerDone;
+  stopTimer();
+  if (done) done();
+}
+function startTimer(fromSec, onTick, onEnd){
+  stopTimer();
+  timerEnd = Date.now() + fromSec * 1000;
+  timerTick = onTick; timerDone = onEnd;
+  onTick(fromSec);
+  timerId = setInterval(() => {
+    const left = Math.max(0, (timerEnd - Date.now()) / 1000);
+    if (timerTick) timerTick(left);
+    if (left <= 0) fireTimerEnd();
+  }, 100);
+}
+function penalizeTimer(sec){
+  if (!timerId) return;
+  timerEnd -= sec * 1000;
+  const left = Math.max(0, (timerEnd - Date.now()) / 1000);
+  if (timerTick) timerTick(left);
+  if (left <= 0) fireTimerEnd();
+}
+
+/* ----------------------------- 5. 工具 ----------------------------- */
+function currentScene(){ return SCENES[state.sceneIndex]; }
+function currentDecision(){
+  const s = currentScene();
+  return s ? s.decisions[state.decisionIndex] : null;
+}
+function hazardTotal(){
+  return currentScene().objects.filter(o => o.isHazard).length;
+}
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function recordAnswer(decision, option){
+  const i = state.answers.findIndex(a => a.decisionId === decision.id);
+  if (i >= 0) state.answers.splice(i, 1);
+  state.answers.push({
+    decisionId: decision.id,
+    dimension: decision.dimension,
+    correct: option.correct,
+    revived: state.revivedSet.includes(decision.id)
+  });
+  recalcStats();
+}
+function recalcStats(){
+  state.stats = { warning:{c:0,t:0}, route:{c:0,t:0}, smoke:{c:0,t:0} };
+  state.answers.forEach(a => {
+    const s = state.stats[a.dimension];
+    s.t++;
+    if (a.correct) s.c++;
+  });
+}
+function levelOf(key){
+  const s = state.stats[key];
+  if (s.t === 0) return { text:'—', cls:'lv-mid' };
+  if (s.c === s.t) return { text:'强', cls:'lv-strong' };
+  if (s.c > 0)     return { text:'中', cls:'lv-mid' };
+  return { text:'弱', cls:'lv-weak' };
+}
+function ratioOf(key){
+  const s = state.stats[key];
+  return s.t === 0 ? -1 : s.c / s.t;
+}
+
+/* ----------------------------- 6. 渲染 ----------------------------- */
+function render(){
+  stopTimer();
+  switch (state.phase) {
+    case 'intro':          return renderIntro();
+    case 'rules':          return renderRules();
+    case 'hazard':         return renderHazard();
+    case 'hazardReview':   return renderHazardReview();
+    case 'decision':       return renderDecision();
+    case 'decisionResult': return renderDecisionResult();
+    case 'sceneFail':      return renderSceneFail();
+    case 'result':         return renderResult();
+    case 'share':          return renderShare();
+    case 'ending':         return renderEnding();
+  }
+}
+
+function renderIntro(){
+  app.innerHTML = `
+  <div class="page center">
+    <div class="badge">2025 消防宣传月 · 全民消防 生命至上</div>
+    <h1 class="big">火线排查</h1>
+    <p class="sub">火起之前，你有 60 秒排查<br>火起之后，你只有 30 秒判断</p>
+    <div class="fire">🔥</div>
+    <button class="btn" data-action="toRules">开始排查</button>
+    <p class="privacy">本活动不收集任何个人信息</p>
+  </div>`;
+}
+
+function renderRules(){
+  app.innerHTML = `
+  <div class="page">
+    <h2>玩法说明</h2>
+    <ul class="rules">
+      <li><b>1</b><span>每个场景藏着 <b>3 处隐患</b>，20 秒内点出来</span></li>
+      <li><b>2</b><span>点错扣 2 秒，点对弹出消防提示</span></li>
+      <li><b>3</b><span>火起后做逃生判断，选错直接看到后果</span></li>
+    </ul>
+    <p class="muted">全局复活次数：<b style="color:var(--orange)">${REVIVE_MAX}</b> 次<br>共 3 个场景，约 90—120 秒</p>
+    <div class="btns" style="margin-top:auto">
+      <button class="btn" data-action="startGame">开始排查</button>
+    </div>
+  </div>`;
+  track('rules_view');
+}
+
+function renderHazard(){
+  const scene = currentScene();
+  const total = hazardTotal();
+  app.innerHTML = `
+  <div class="page">
+    <div class="hud">
+      <div class="bar"><i id="barFill" style="width:${state.hazardLeft / HAZARD_TIME * 100}%"></i></div>
+      <div class="hud-row">
+        <span>${scene.name} · 隐患排查</span>
+        <span id="hudCount">已发现 ${state.found.length}/${total}</span>
+      </div>
+    </div>
+    <div class="scene ${scene.id}">
+      ${scene.objects.map(o => `
+        <button class="obj ${state.found.includes(o.id) ? 'found' : ''}"
+                data-obj="${o.id}" style="left:${o.cx}%;top:${o.cy}%"
+                aria-label="${o.name}">
+          <span class="emoji">${o.emoji}</span>
+          <span class="label">${o.name}</span>
+        </button>`).join('')}
+    </div>
+    <p class="tip">点击你认为存在隐患的物品</p>
+  </div>`;
+
+  startTimer(state.hazardLeft, left => {
+    state.hazardLeft = left;
+    const f = document.getElementById('barFill');
+    if (f) f.style.width = (left / HAZARD_TIME * 100) + '%';
+  }, enterHazardReview);
+}
+
+function renderHazardReview(){
+  const scene = currentScene();
+  const all = scene.objects.filter(o => o.isHazard);
+  const missed = state.missed;
+
+  app.innerHTML = `
+  <div class="page">
+    <h2>排查复盘</h2>
+    <p class="muted">${missed.length ? `你漏掉了 ${missed.length} 处隐患：` : '全部找到，干得漂亮。'}</p>
+    ${missed.length
+      ? missed.map(o => `
+        <div class="card">
+          <span class="ico">${o.emoji}</span>
+          <div><b>${o.name}</b><p>${o.hint}</p></div>
+        </div>`).join('')
+      : all.map(o => `
+        <div class="card">
+          <span class="ico">✅</span>
+          <div><b>${o.name}</b><p>${o.hint}</p></div>
+        </div>`).join('')}
+    <div class="btns" style="margin-top:auto">
+      <button class="btn" data-action="toDecision">进入火场判断</button>
+    </div>
+  </div>`;
+}
+
+function renderDecision(){
+  const scene = currentScene();
+  const d = scene.decisions[state.decisionIndex];
+  if (!d) return nextScene();
+
+  app.innerHTML = `
+  <div class="page">
+    <div class="hud">
+      <div class="bar"><i id="barFill" style="width:${state.decisionLeft / DECISION_TIME * 100}%"></i></div>
+      <div class="hud-row">
+        <span>${scene.name} · 火场判断 ${state.decisionIndex + 1}/${scene.decisions.length}</span>
+        <span id="hudTime">${Math.ceil(state.decisionLeft)}s</span>
+      </div>
+    </div>
+    <h2 class="q">${d.question}</h2>
+    <div class="options">
+      ${d.options.map(o => `
+        <button class="opt" data-action="choose" data-option="${o.id}">${o.label}</button>
+      `).join('')}
+    </div>
+    <p class="muted small" style="text-align:center;margin-top:auto">
+      本场景剩余时间与两题共用，犹豫也会付出代价
+    </p>
+  </div>`;
+
+  startTimer(state.decisionLeft, left => {
+    state.decisionLeft = left;
+    const f = document.getElementById('barFill');
+    if (f) f.style.width = (left / DECISION_TIME * 100) + '%';
+    const t = document.getElementById('hudTime');
+    if (t) t.textContent = Math.ceil(left) + 's';
+  }, () => {
+    const dd = currentDecision();
+    if (!dd) return;
+    const wrong = dd.options.find(o => !o.correct) || dd.options[0];
+    onChoose(wrong.id, true);
+  });
+}
+
+function renderDecisionResult(){
+  const d = state.pendingDecision;
+  const opt = state.pendingOption;
+
+  if (!d || !opt) {
+    app.innerHTML = `
+    <div class="page center">
+      <p class="muted">数据异常，请重新开始</p>
+      <button class="btn" data-action="restart" style="max-width:240px">重新开始</button>
+    </div>`;
+    return;
+  }
+
+  const canRevive = !opt.correct
+    && state.reviveUsed < REVIVE_MAX
+    && !state.revivedSet.includes(d.id);
+  const continueLabel = opt.correct ? '继续' : '进入失败复盘';
+
+  app.innerHTML = `
+  <div class="page">
+    <div class="result-head ${opt.correct ? 'ok' : 'bad'}">
+      ${opt.correct ? '✓ 判断正确' : '✕ 判断失误'}
+    </div>
+    <div class="consequence ${opt.correct ? 'ok' : ''}">
+      <p>${opt.consequenceText}</p>
+    </div>
+    ${!opt.correct ? `
+      <div class="card">
+        <span class="ico">💡</span>
+        <div><b>知识点</b><p>${d.tip}</p></div>
+      </div>` : ''}
+    <div class="btns">
+      ${canRevive
+        ? `<button class="btn ghost" data-action="revive">学习知识，复活重选（剩 ${REVIVE_MAX - state.reviveUsed} 次）</button>`
+        : ''}
+      <button class="btn" data-action="continue">${continueLabel}</button>
+    </div>
+  </div>`;
+}
+
+function renderSceneFail(){
+  const c = FAIL_CARDS[state.sceneIndex] || FAIL_CARDS[0];
+  app.innerHTML = `
+  <div class="page">
+    <div class="result-head bad">✕ 逃生失败</div>
+    <div class="card" style="margin-bottom:20px">
+      <span class="ico">${c.ico}</span>
+      <div><b>${c.title}</b><p>${c.text}</p></div>
+    </div>
+    <p class="muted">
+      你的选择之外，还有一类隐患不归你控制——<br>但它同样致命。这就是「生命通道」为什么必须畅通。
+    </p>
+    <div class="btns" style="margin-top:auto">
+      <button class="btn" data-action="continue">继续</button>
+    </div>
+  </div>`;
+  track('scene_fail', { sceneId: currentScene().id, sceneIndex: state.sceneIndex });
+}
+
+function renderResult(){
+  const keys = [
+    { key:'warning', name:'预警意识' },
+    { key:'route',   name:'路线判断' },
+    { key:'smoke',   name:'烟雾防护' }
+  ];
+
+  const wrongKeys = keys.filter(k => {
+    const s = state.stats[k.key];
+    return s.t > 0 && s.c < s.t;
+  });
+  const untestedKeys = keys.filter(k => state.stats[k.key].t === 0);
+
+  let adviceHtml;
+  if (wrongKeys.length > 0) {
+    const weakest = wrongKeys.slice().sort((a, b) => ratioOf(a.key) - ratioOf(b.key))[0];
+    adviceHtml = `<b>最需要补的一课 · ${weakest.name}</b><br>${ADVICE[weakest.key]}`;
+  } else if (untestedKeys.length > 0) {
+    adviceHtml = `<b>还有维度未测到</b><br>建议完整玩一遍，把三类判断都练一遍。`;
+  } else {
+    adviceHtml = `<b>全部判断正确</b><br>你已经掌握了火场逃生的核心动作，转发给家人一起练习。`;
+  }
+
+  app.innerHTML = `
+  <div class="page">
+    <h2>你的逃生能力报告</h2>
+    <div class="tags">
+      ${keys.map(k => {
+        const lv = levelOf(k.key);
+        return `<div class="tag"><span>${k.name}</span><b class="${lv.cls}">${lv.text}</b></div>`;
+      }).join('')}
+    </div>
+    <div class="advice">${adviceHtml}</div>
+    <p class="muted">
+      复活使用：${state.reviveUsed}/${REVIVE_MAX} 次 ·
+      失败场景：${state.failedScenes.length} 个
+    </p>
+    <div class="btns" style="margin-top:auto">
+      <button class="btn" data-action="toShare">生成分享卡片</button>
+      <button class="btn ghost" data-action="restart">重新挑战</button>
+    </div>
+  </div>`;
+
+  track('result_view', {
+    stats: state.stats,
+    reviveUsed: state.reviveUsed,
+    failedScenes: state.failedScenes
+  });
+}
+
+function renderShare(){
+  app.innerHTML = `
+  <div class="page">
+    <h2 style="font-size:18px">长按图片保存 · 转给家人</h2>
+    <img id="cardImg" class="card-img" alt="消防生存判断分享卡片">
+    <div class="btns" style="margin-top:auto">
+      <button class="btn" data-action="toEnding">完成</button>
+    </div>
+  </div>`;
+  drawCardSafely();
+  track('share_generate', { hadMistake: !!state.scariest });
+}
+
+function drawCardSafely(){
+  const img = document.getElementById('cardImg');
+  if (!img) return;
+  try {
+    drawCard(img);
+    img.style.display = '';
+    img.alt = '消防生存判断分享卡片';
+    const retry = document.getElementById('retryCardBtn');
+    if (retry) retry.remove();
+  } catch (e) {
+    console.error('生成分享卡片失败', e);
+    img.style.display = 'none';
+    showToast('卡片生成失败，请重试');
+    if (!document.getElementById('retryCardBtn')) {
+      const btn = document.createElement('button');
+      btn.id = 'retryCardBtn';
+      btn.className = 'btn ghost';
+      btn.textContent = '重新生成卡片';
+      btn.setAttribute('data-action', 'retryCard');
+      // 放入 .btns 容器顶部，与完成按钮相邻
+      const btns = img.parentNode.querySelector('.btns');
+      if (btns) btns.insertBefore(btn, btns.firstChild);
+      else img.parentNode.insertBefore(btn, img.nextSibling);
+    }
+  }
+}
+
+function renderEnding(){
+  app.innerHTML = `
+  <div class="page center">
+    <div style="font-size:52px;margin-bottom:18px">🧯</div>
+    <h1 class="big" style="font-size:30px;letter-spacing:3px">全民消防 生命至上</h1>
+    <p class="sub" style="margin-bottom:22px">安全用火用电 · 畅通生命通道</p>
+    <p class="muted" style="margin-bottom:26px">转发给家人，让排查多一个人知道</p>
+    <button class="btn" data-action="restart">再玩一次</button>
+  </div>`;
+  track('ending_view');
+}
+
+/* ----------------------------- 7. Canvas 分享卡 ----------------------------- */
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+/**
+ * 自动换行，支持 maxLines 限制
+ * 超过行数时最后一行末尾加省略号，返回最后一行的基线 y
+ */
+function wrapText(ctx, text, x, y, maxW, lineH, maxLines){
+  const lines = [];
+  let line = '';
+  for (const ch of text) {
+    if (ctx.measureText(line + ch).width > maxW) {
+      lines.push(line);
+      line = ch;
+    } else {
+      line += ch;
+    }
+  }
+  if (line) lines.push(line);
+
+  let out = lines;
+  if (maxLines && lines.length > maxLines) {
+    out = lines.slice(0, maxLines);
+    // 末行截去一个字符再加省略号，保证不超宽
+    out[maxLines - 1] = out[maxLines - 1].slice(0, -1) + '…';
+  }
+  let ly = y;
+  out.forEach(l => { ctx.fillText(l, x, ly); ly += lineH; });
+  return ly - lineH;
+}
+
+function drawCard(imgEl){
+  const W = 750, H = 1000;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const x = c.getContext('2d');
+
+  const g = x.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, '#0f1c2b');
+  g.addColorStop(1, '#1A3A5C');
+  x.fillStyle = g;
+  x.fillRect(0, 0, W, H);
+
+  x.fillStyle = '#D8261A';
+  x.fillRect(0, 0, W, 14);
+
+  x.fillStyle = 'rgba(232,122,46,.16)';
+  roundRect(x, 48, 66, 316, 54, 27);
+  x.fill();
+  x.fillStyle = '#E87A2E';
+  x.font = 'bold 26px -apple-system,"PingFang SC",sans-serif';
+  x.textBaseline = 'middle';
+  x.fillText('消防生存判断', 82, 94);
+
+  // 主标题按是否有答错切换
+  x.textBaseline = 'alphabetic';
+  x.fillStyle = '#F5F0E8';
+  x.font = 'bold 56px -apple-system,"PingFang SC",sans-serif';
+  if (state.scariest) {
+    x.fillText('你离危险', 48, 224);
+    x.fillText('只差一个判断', 48, 296);
+  } else {
+    x.fillText('你的判断', 48, 224);
+    x.fillText('全部正确', 48, 296);
+  }
+
+  // 副文案：像素级截断，最多 3 行（372/418/464），不压 486 分隔线
+  x.fillStyle = 'rgba(245,240,232,.72)';
+  x.font = '28px -apple-system,"PingFang SC",sans-serif';
+  const scare = (state.scariest && state.scariest.text)
+    ? state.scariest.text
+    : '六道判断全部正确——但火场从不给第二次机会，保持警惕。';
+  wrapText(x, scare, 48, 372, 654, 46, 3);
+
+  x.strokeStyle = 'rgba(245,240,232,.18)';
+  x.lineWidth = 2;
+  x.beginPath(); x.moveTo(48, 486); x.lineTo(702, 486); x.stroke();
+
+  x.fillStyle = '#E87A2E';
+  x.font = 'bold 30px -apple-system,"PingFang SC",sans-serif';
+  x.fillText('记住这三条', 48, 546);
+
+  const tips = [
+    '① 开门先摸门把手：门烫或有烟，就别开',
+    '② 起火不坐电梯，楼梯间才是生命通道',
+    '③ 浓烟中贴地低姿、捂口鼻、沿墙走'
+  ];
+  x.fillStyle = 'rgba(245,240,232,.9)';
+  x.font = '26px -apple-system,"PingFang SC",sans-serif';
+  let ty = 612;
+  tips.forEach(t => { ty = wrapText(x, t, 48, ty, 640, 42, 2) + 44; });
+
+  x.fillStyle = 'rgba(245,240,232,.45)';
+  x.font = '22px -apple-system,"PingFang SC",sans-serif';
+  x.fillText('全民消防 生命至上 · 安全用火用电', 48, 928);
+  x.fillText('长按保存 · 转给家人', 48, 966);
+
+  imgEl.src = c.toDataURL('image/png');
+}
+
+/* ----------------------------- 8. 流程 ----------------------------- */
+function resetGame(){
+  state.phase = 'hazard';
+  state.sceneIndex = 0;
+  state.found = [];
+  state.hazardLeft = HAZARD_TIME;
+  state.decisionLeft = DECISION_TIME;
+  state.decisionIndex = 0;
+  state.reviveUsed = 0;
+  state.revivedSet = [];
+  state.answers = [];
+  state.stats = { warning:{c:0,t:0}, route:{c:0,t:0}, smoke:{c:0,t:0} };
+  state.failedScenes = [];
+  state.missed = [];
+  state.pendingDecision = null;
+  state.pendingOption = null;
+  state.scariest = null;
+  state.locked = false;
+  render();
+}
+
+function enterHazardReview(){
+  if (state.phase !== 'hazard') return;
+  stopTimer();
+  state.locked = false;
+  const scene = currentScene();
+  state.missed = scene.objects.filter(o => o.isHazard && !state.found.includes(o.id));
+  state.phase = 'hazardReview';
+  render();
+
+  track('hazard_complete', {
+    sceneId: scene.id,
+    found: state.found.length,
+    total: scene.objects.filter(o => o.isHazard).length,
+    missed: state.missed.map(o => o.id)
+  });
+}
+
+function onObjectClick(id, el){
+  if (state.phase !== 'hazard' || state.locked) return;
+  if (state.found.includes(id)) return;
+
+  const obj = currentScene().objects.find(o => o.id === id);
+  if (!obj) return;
+
+  track('hazard_click', { sceneId: currentScene().id, id, isHazard: obj.isHazard });
+
+  if (obj.isHazard) {
+    state.found.push(id);
+    el.classList.add('found');
+    showToast('✅ ' + obj.hint);
+    const counter = document.getElementById('hudCount');
+    if (counter) counter.textContent = `已发现 ${state.found.length}/${hazardTotal()}`;
+
+    if (state.found.length >= hazardTotal()) {
+      state.locked = true;
+      setTimeout(enterHazardReview, 700);
+    }
+  } else {
+    el.classList.add('wrong');
+    setTimeout(() => el.classList.remove('wrong'), 320);
+    if (navigator.vibrate) navigator.vibrate(80);
+    showToast('这里不是隐患点 · -' + PENALTY + '秒');
+    penalizeTimer(PENALTY);
+  }
+}
+
+function onChoose(optionId, isTimeout){
+  if (state.locked || state.phase !== 'decision') return;
+  const d = currentDecision();
+  if (!d) return;
+  const opt = d.options.find(o => o.id === optionId);
+  if (!opt) return;
+
+  state.locked = true;
+  stopTimer();
+  recordAnswer(d, opt);
+
+  if (!opt.correct && !state.scariest) {
+    state.scariest = { text: opt.consequenceText };
+  }
+
+  state.pendingDecision = d;
+  state.pendingOption = opt;
+  state.phase = 'decisionResult';
+  render();
+
+  track('decision_choose', {
+    sceneId: currentScene().id,
+    decisionId: d.id,
+    dimension: d.dimension,
+    optionId: opt.id,
+    correct: opt.correct,
+    isTimeout: !!isTimeout
+  });
+
+  if (isTimeout) showToast('⏰ 时间到，已按最差结果处理');
+}
+
+function onRevive(){
+  if (state.phase !== 'decisionResult') return;
+  const d = state.pendingDecision;
+  if (!d) return;
+  state.reviveUsed++;
+  state.revivedSet.push(d.id);
+  state.locked = false;
+  state.pendingDecision = null;
+  state.pendingOption = null;
+  state.decisionLeft = Math.max(DECISION_MIN_REVIVE, state.decisionLeft);
+  state.phase = 'decision';
+  render();
+
+  track('revive_use', { decisionId: d.id, reviveUsed: state.reviveUsed });
+}
+
+function onContinue(){
+  if (state.phase === 'sceneFail') { nextScene(); return; }
+
+  const d = state.pendingDecision;
+  const opt = state.pendingOption;
+  if (!d || !opt) return;
+
+  if (!opt.correct) {
+    if (!state.failedScenes.includes(state.sceneIndex)) {
+      state.failedScenes.push(state.sceneIndex);
+    }
+    state.phase = 'sceneFail';
+    render();
+    return;
+  }
+  advance();
+}
+
+function advance(){
+  state.decisionIndex++;
+  const scene = currentScene();
+  if (state.decisionIndex >= scene.decisions.length) { nextScene(); return; }
+
+  state.locked = false;
+  state.pendingDecision = null;
+  state.pendingOption = null;
+  state.decisionLeft = Math.max(DECISION_MIN_NEXT, state.decisionLeft);
+  state.phase = 'decision';
+  render();
+}
+
+function nextScene(){
+  state.locked = false;
+  state.pendingDecision = null;
+  state.pendingOption = null;
+
+  if (state.sceneIndex < SCENES.length - 1) {
+    state.sceneIndex++;
+    state.found = [];
+    state.hazardLeft = HAZARD_TIME;
+    state.decisionIndex = 0;
+    state.decisionLeft = DECISION_TIME;
+    state.missed = [];
+    state.phase = 'hazard';
+    render();
+  } else {
+    state.phase = 'result';
+    render();
+  }
+}
+
+/* ----------------------------- 9. 事件 ----------------------------- */
+app.addEventListener('click', e => {
+  const objEl = e.target.closest('[data-obj]');
+  if (objEl) { onObjectClick(objEl.dataset.obj, objEl); return; }
+
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+
+  const action = btn.dataset.action;
+  const option = btn.dataset.option;
+
+  switch (action) {
+    case 'toRules':    state.phase = 'rules'; render(); break;
+    case 'startGame':  track('h5_start'); resetGame(); break;
+    case 'toDecision':
+      state.decisionIndex = 0;
+      state.decisionLeft = DECISION_TIME;
+      state.locked = false;
+      state.phase = 'decision';
+      render();
+      break;
+    case 'choose':     onChoose(option); break;
+    case 'revive':     onRevive(); break;
+    case 'continue':   onContinue(); break;
+    case 'toShare':    state.phase = 'share'; render(); break;
+    case 'toEnding':   state.phase = 'ending'; render(); break;
+    case 'retryCard':  drawCardSafely(); break;
+    case 'restart':    resetGame(); break;
+  }
+});
+
+/* ----------------------------- 10. 启动 ----------------------------- */
+render();
+</script>
+</body>
+</html>
